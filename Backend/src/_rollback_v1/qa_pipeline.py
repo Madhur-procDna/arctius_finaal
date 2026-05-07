@@ -256,22 +256,22 @@ def _run_single_question(
                 "sql_agent_llm_rounds": 0,
                 "sql_agent_sql_steps": 0,
             }
-        remote_hit = get_cached_pipeline(q, schema="arcetus_sqlite")
-        if remote_hit and remote_hit.get("answer"):
-            _LOCAL_QA_CACHE[q_key] = {
-                "sql": remote_hit.get("sql"),
-                "answer": remote_hit.get("answer"),
-                "row_count": int(remote_hit.get("row_count") or 0),
-            }
-            return {
-                "question": q,
-                "sql": remote_hit.get("sql"),
-                "answer": remote_hit.get("answer", ""),
-                "row_count": int(remote_hit.get("row_count") or 0),
-                "cache_hit": True,
-                "sql_agent_llm_rounds": 0,
-                "sql_agent_sql_steps": 0,
-            }
+        # remote_hit = get_cached_pipeline(q, schema="arcetus_sqlite")
+        # if remote_hit and remote_hit.get("answer"):
+        #     _LOCAL_QA_CACHE[q_key] = {
+        #         "sql": remote_hit.get("sql"),
+        #         "answer": remote_hit.get("answer"),
+        #         "row_count": int(remote_hit.get("row_count") or 0),
+        #     }
+        #     return {
+        #         "question": q,
+        #         "sql": remote_hit.get("sql"),
+        #         "answer": remote_hit.get("answer", ""),
+        #         "row_count": int(remote_hit.get("row_count") or 0),
+        #         "cache_hit": True,
+        #         "sql_agent_llm_rounds": 0,
+        #         "sql_agent_sql_steps": 0,
+        #     }
 
     agent = SQLAgent()
     resp = agent.run(user_text=q, history=_build_history(conversation), db_state=get_db())

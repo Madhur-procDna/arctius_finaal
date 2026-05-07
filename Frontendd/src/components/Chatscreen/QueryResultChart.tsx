@@ -22,6 +22,8 @@ export type ChartKind = 'bar' | 'pie' | 'line' | 'stacked_bar';
 export interface ChartPayload {
   kind: ChartKind;
   data: Record<string, unknown>[];
+  /** Descriptive title for the chart. */
+  title?: string;
   /** When set (2+ keys), line chart draws one series per key (e.g. YoY: revenue_2024, revenue_2025). */
   lineSeriesKeys?: string[];
   /** For stacked bar charts: one key per stack segment (e.g. territories). */
@@ -207,6 +209,15 @@ function buildLineChartState(chart: ChartPayload): LineChartState {
   };
 }
 
+const RenderTitle = ({ title, kind }: { title?: string; kind: ChartKind }) => {
+  if (!title) return null;
+  return (
+    <h3 className="text-lg font-semibold mb-3 text-gray-900 px-2">
+      {title} ({kind.toUpperCase()})
+    </h3>
+  );
+};
+
 export const QueryResultChart: React.FC<{ chart: ChartPayload }> = ({ chart }) => {
   const lineState = useMemo(() => buildLineChartState(chart), [chart]);
 
@@ -226,10 +237,13 @@ export const QueryResultChart: React.FC<{ chart: ChartPayload }> = ({ chart }) =
     />
   );
 
+  const chartContainerStyle = { height: chart.kind === 'pie' ? 320 : 300 };
+
   if (chart.kind === 'pie') {
     if (!pieBarData.length) return null;
     return (
-      <div className="mt-4 w-full min-w-0" style={{ height: 320 }}>
+      <div className="mt-4 w-full min-w-0" style={chartContainerStyle}>
+        <RenderTitle title={chart.title} kind={chart.kind} />
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -271,13 +285,33 @@ export const QueryResultChart: React.FC<{ chart: ChartPayload }> = ({ chart }) =
       common
     );
 
+    const metricName = chart.title?.split(' ')[0] || 'Value';
+
     return (
-      <div className="mt-4 w-full min-w-0" style={{ height: 300 }}>
+      <div className="mt-4 w-full min-w-0" style={chartContainerStyle}>
+        <RenderTitle title={chart.title} kind={chart.kind} />
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={lineData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-            <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-25} textAnchor="end" height={70} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => Number(v).toLocaleString()} />
+            <XAxis 
+              dataKey="name" 
+              tick={{ fontSize: 11 }} 
+              interval={0} 
+              angle={-25} 
+              textAnchor="end" 
+              height={70}
+              label={{ value: 'Time Periods', position: 'insideBottom', offset: -5, fill: '#666' }}
+            />
+            <YAxis 
+              tick={{ fontSize: 11 }} 
+              tickFormatter={(v) => Number(v).toLocaleString()}
+              label={{ 
+                value: metricName, 
+                angle: -90, 
+                position: 'insideLeft',
+                fill: '#666'
+              }}
+            />
             {lineTooltip}
             {multi ? <Legend wrapperStyle={{ fontSize: 12 }} /> : null}
             {seriesKeys.map((key, i) => (
@@ -305,7 +339,8 @@ export const QueryResultChart: React.FC<{ chart: ChartPayload }> = ({ chart }) =
         ? chart.stackSeriesKeys
         : Object.keys(rows[0]).filter((k) => k !== 'name');
     return (
-      <div className="mt-4 w-full min-w-0" style={{ height: 320 }}>
+      <div className="mt-4 w-full min-w-0" style={chartContainerStyle}>
+        <RenderTitle title={chart.title} kind={chart.kind} />
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
@@ -330,13 +365,33 @@ export const QueryResultChart: React.FC<{ chart: ChartPayload }> = ({ chart }) =
 
   if (!pieBarData.length) return null;
 
+  const metricName = chart.title?.split(' ')[0] || 'Value';
+
   return (
-    <div className="mt-4 w-full min-w-0" style={{ height: 300 }}>
+    <div className="mt-4 w-full min-w-0" style={chartContainerStyle}>
+      <RenderTitle title={chart.title} kind={chart.kind} />
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={pieBarData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-          <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-25} textAnchor="end" height={70} />
-          <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => Number(v).toLocaleString()} />
+          <XAxis 
+            dataKey="name" 
+            tick={{ fontSize: 11 }} 
+            interval={0} 
+            angle={-25} 
+            textAnchor="end" 
+            height={70}
+            label={{ value: 'Categories', position: 'insideBottom', offset: -5, fill: '#666' }}
+          />
+          <YAxis 
+            tick={{ fontSize: 11 }} 
+            tickFormatter={(v) => Number(v).toLocaleString()}
+            label={{ 
+              value: metricName, 
+              angle: -90, 
+              position: 'insideLeft',
+              fill: '#666'
+            }}
+          />
           {common}
           <Bar dataKey="value" fill={BRAND} radius={[4, 4, 0, 0]} maxBarSize={56} />
         </BarChart>

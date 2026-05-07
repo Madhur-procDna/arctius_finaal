@@ -387,116 +387,63 @@ def _build_trend_math_answer(question: str, rows: list[dict]) -> str | None:
     return "\n".join(lines)
 
 
-def _suggest_chart(question: str, rows: list[dict]) -> dict | None:
+def _suggest_chart(question: str, rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
     Return a chart payload when the data and question clearly warrant a chart.
+    Returns None when no chart adds value (single-number results, free-text, etc.).
 
-    - Wide-format single row (many period columns) → line when the question is time-oriented.
-    - Long-format many rows → bar for rank / growth / territory / region lists; line for trends;
-      pie for share/breakdown.
+    Handles two shapes:
+    - Long format: many rows, first col = label, second col = metric → bar/pie/line
+    - Wide format: 1 row, many numeric columns (e.g. Jan_25, Feb_25 …) → line chart
     """
     if not rows:
         return None
-    q = question or ""
+    q = question.lower() if question else ""
 
-    # Wide single row: split monthly vs quarterly and chart ONLY ONE granularity.
-    # We prioritize monthly for trend visualization; QoQ remains in text section.
-    if len(rows) == 1 and len(rows[0]) >= 4:
-        months, quarters = _extract_wide_monthly_and_quarterly(rows[0])
-        if (_TREND_RE.search(q) or _TIME_SERIES_Q.search(q)) and len(months) >= 3:
-            if _has_backward_time(months):
-                return None
-            monthly_data = [{"name": label, "value": val} for _, _, label, val in months]
-            return {"kind": "line", "data": monthly_data}
-        if (_TREND_RE.search(q) or _TIME_SERIES_Q.search(q)) and len(quarters) >= 3 and len(months) < 3:
-            if _has_backward_time(quarters):
-                return None
-            quarterly_data = [{"name": label, "value": val} for _, _, label, val in quarters]
-            return {"kind": "line", "data": quarterly_data}
+    # ── Wide-format (pivoted) single row: all columns are time-period values ──
+    if len(rows) == 1 and (_TREND_RE.search(q) or len(rows[0]) >= 4):
+        pivoted = _try_wide_pivot(rows[0])
+        if pivoted and len(pivoted) >= 3:
+            metric = next((k for k in rows[0] if _is_numeric_val(rows[0][k])), "Metric")
+            title = f"{metric.replace('_', ' ').title()} Trend Over Time"
+            return {"kind": "line", "data": pivoted, "title": title}
 
+    # ── Long format: need at least 2 rows ──────────────────────────────────────
     if len(rows) < 2:
         return None
 
-    label_col, metric_col = _pick_label_and_metric_cols(rows)
-    if not label_col or not metric_col:
-        return None
-    if _CONTRIB_RE.search(q):
-        # Contribution questions should visualize contribution itself when present.
-        for k in rows[0].keys():
-            if re.search(r"contrib|contribution", k, re.IGNORECASE):
-                if _scalar_for_metric(rows[0].get(k)) is not None:
-                    metric_col = k
-                    break
-
-    # Comparison view: area buckets with stacked region/territory components.
-    if _COMPARE_RE.search(q):
-        keys_l = {k.lower(): k for k in rows[0].keys()}
-        area_col = keys_l.get("area")
-        seg_col = (
-            keys_l.get("region")
-            or keys_l.get("base_territory")
-            or keys_l.get("territory")
-            or keys_l.get("segment")
-        )
-        if area_col and seg_col and area_col != seg_col:
-            by_area: dict[str, dict[str, float]] = {}
-            seg_seen: list[str] = []
-            for r in rows:
-                area_name = _row_label_string(r, area_col)
-                seg_name = _row_label_string(r, seg_col)
-                val = _scalar_for_metric(r.get(metric_col))
-                if not area_name or not seg_name or val is None:
-                    continue
-                bucket = by_area.setdefault(area_name, {})
-                bucket[seg_name] = bucket.get(seg_name, 0.0) + float(val)
-                if seg_name not in seg_seen:
-                    seg_seen.append(seg_name)
-            if len(by_area) >= 2 and len(seg_seen) >= 2:
-                data_rows: list[dict[str, object]] = []
-                for area_name in sorted(by_area.keys()):
-                    row_out: dict[str, object] = {"name": area_name}
-                    for seg_name in seg_seen[:10]:
-                        row_out[seg_name] = by_area[area_name].get(seg_name, 0.0)
-                    data_rows.append(row_out)
-                return {"kind": "stacked_bar", "data": data_rows, "stackSeriesKeys": seg_seen[:10]}
-
-    data: list[dict] = []
-    for r in rows:
-        name = _row_label_string(r, label_col)
-        val = _scalar_for_metric(r.get(metric_col))
-        if val is None:
-            continue
-        if _is_blankish_label(name):
-            continue
-        data.append({"name": name or "(blank)", "value": val})
-    if len(data) < 2:
+    cols = list(rows[0].keys())
+    if not cols:
         return None
 
-    # Temporal labels should render as line charts even when the text also mentions
-    # ranking/growth/compare terms.
-    if _is_probably_time_series_data(data):
-        return {"kind": "line", "data": data}
+    # Find a numeric metric column (skip the first/label column).
+    numeric_cols = [
+        c for c in cols[1:]
+        if any(_is_numeric_val(row.get(c)) for row in rows)
+    ]
+    if not numeric_cols:
+        return None
 
-    # Ranking / territory / growth comparisons → bar chart (before generic trend)
-    if _CONTRIB_RE.search(q) and len(data) <= 12:
-        # Contribution requests are parts-of-whole by intent.
-        return {"kind": "pie", "data": data}
-    if _BAR_RE.search(q):
-        return {"kind": "bar", "data": data[:10]}
-    if _TREND_RE.search(q) or _TIME_SERIES_Q.search(q):
-        # Keep order stable for line charts if labels contain year/month or quarter tokens.
-        return {"kind": "line", "data": data}
-    if _PIE_RE.search(q) and len(data) <= 12:
-        # Guardrail: pie slices should represent parts of a whole. If metric is already a
-        # per-group percentage (e.g. share_pct by segment), normalizing again in a pie
-        # produces misleading labels and can imply totals >100%. Use bar instead.
-        if _PERCENTISH_COL_RE.search(metric_col or ""):
-            total = sum(d["value"] for d in data if isinstance(d.get("value"), (int, float)))
-            if total < 98.0 or total > 102.0:
-                return {"kind": "bar", "data": data[:10]}
-        return {"kind": "pie", "data": data}
-    if 2 <= len(data) <= 10:
-        return {"kind": "bar", "data": data}
+    label_col = cols[0]
+    metric_col = numeric_cols[0]
+    data = [
+        {"name": str(r.get(label_col, "")), "value": float(r.get(metric_col, 0))}
+        for r in rows
+    ]
+
+    # Generate descriptive title
+    metric_name = metric_col.replace('_', ' ').title()
+    label_name = label_col.replace('_', ' ').title()
+
+    if _TREND_RE.search(q):
+        title = f"{metric_name} Trend by {label_name}"
+        return {"kind": "line", "data": data, "title": title}
+    if _PIE_RE.search(q) and len(rows) <= 12:
+        title = f"{metric_name} Distribution by {label_name}"
+        return {"kind": "pie", "data": data, "title": title}
+    if _BAR_RE.search(q) and len(rows) <= 25:
+        title = f"{metric_name} by {label_name}"
+        return {"kind": "bar", "data": data, "title": title}
     return None
 
 logger = logging.getLogger(__name__)
@@ -979,23 +926,23 @@ def _run_single_question(
                 "sql_agent_llm_rounds": 0,
                 "sql_agent_sql_steps": 0,
             }
-        remote_hit = get_cached_pipeline(q, schema=_cache_schema_name())
-        if remote_hit and remote_hit.get("answer"):
-            cleaned_answer = _finalize_answer_text(remote_hit.get("answer", ""))
-            _LOCAL_QA_CACHE[q_key] = {
-                "sql": remote_hit.get("sql"),
-                "answer": cleaned_answer,
-                "row_count": int(remote_hit.get("row_count") or 0),
-            }
-            return {
-                "question": q,
-                "sql": remote_hit.get("sql"),
-                "answer": cleaned_answer,
-                "row_count": int(remote_hit.get("row_count") or 0),
-                "cache_hit": True,
-                "sql_agent_llm_rounds": 0,
-                "sql_agent_sql_steps": 0,
-            }
+        # remote_hit = get_cached_pipeline(q, schema=_cache_schema_name())
+        # if remote_hit and remote_hit.get("answer"):
+        #     cleaned_answer = _finalize_answer_text(remote_hit.get("answer", ""))
+        #     _LOCAL_QA_CACHE[q_key] = {
+        #         "sql": remote_hit.get("sql"),
+        #         "answer": cleaned_answer,
+        #         "row_count": int(remote_hit.get("row_count") or 0),
+        #     }
+        #     return {
+        #         "question": q,
+        #         "sql": remote_hit.get("sql"),
+        #         "answer": cleaned_answer,
+        #         "row_count": int(remote_hit.get("row_count") or 0),
+        #         "cache_hit": True,
+        #         "sql_agent_llm_rounds": 0,
+        #         "sql_agent_sql_steps": 0,
+        #     }
 
     agent = SQLAgent()
     resp = agent.run(user_text=q, history=_build_history(conversation), db_state=get_db())

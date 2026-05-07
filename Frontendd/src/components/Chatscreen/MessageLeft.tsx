@@ -198,16 +198,8 @@ const MessageLeft: React.FC<MessageLeftProps> = ({
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                     {content}
                   </ReactMarkdown>
-                  {meta?.chart && Array.isArray(meta.chart.data) && meta.chart.data.length > 0 ? (
+                  {meta?.chart ? (  // ← SIMPLIFIED: just check existence
                     <QueryResultChart chart={meta.chart} />
-                  ) : null}
-                  {hasResultTablePayload && !omitResultTablePanel ? (
-                    <ResultTablePanel
-                      table={resultTable}
-                      multipartLastPart={meta.result_table_multipart_last_part}
-                      previewRowLimit={meta.result_display_preview_rows ?? 10}
-                      pipelineRowCount={meta.row_count}
-                    />
                   ) : null}
                   {hasResultTablePayload && omitResultTablePanel ? (
                     <div className="mt-3 flex flex-wrap justify-end gap-2">

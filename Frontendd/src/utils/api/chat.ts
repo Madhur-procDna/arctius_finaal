@@ -118,10 +118,15 @@ function parseChartPayload(
     ['bar', 'pie', 'line', 'stacked_bar'].includes(String((chart as { kind: string }).kind)) &&
     Array.isArray((chart as { data?: unknown }).data)
   ) {
-    const c = chart as ChartPayload & { lineSeriesKeys?: string[]; stackSeriesKeys?: string[] };
+    const c = chart as ChartPayload & { 
+      lineSeriesKeys?: string[]; 
+      stackSeriesKeys?: string[];
+      title?: string;  // ← Explicitly type for title
+    };
     return {
       kind: c.kind,
       data: c.data as Record<string, unknown>[],
+      title: typeof c.title === 'string' ? c.title : undefined,  // ← EXTRACT TITLE
       ...(Array.isArray(c.lineSeriesKeys) && c.lineSeriesKeys.length > 0
         ? { lineSeriesKeys: c.lineSeriesKeys }
         : {}),
