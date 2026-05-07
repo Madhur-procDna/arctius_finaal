@@ -112,7 +112,7 @@ const LandingPage = () => {
             Hi User
           </h1>
           <p className="text-black text-[22px] mt-2 font-normal leading-8">
-            I am here to assist regarding pharma query
+           Have a question? Just ask - your data speaks your language
           </p>
 
           {/* Input Box */}
